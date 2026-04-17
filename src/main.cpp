@@ -7,8 +7,9 @@
  *      @note
  */
 /*-------------------------------------------------------------------*/
-#include <asm-generic/socket.h>
-#include <functional>
+#include "../include/chibi-redis.hpp"
+#include "resp_parse.hpp"
+
 #include <iostream>
 #include <string>
 #include <unordered_map>
@@ -25,15 +26,6 @@
  */
 constexpr int PORT_NO = 6333;
 constexpr int MAX_EVENT = 10;
-
-/*-------------------------------------------------------------------*/
-/*! @brief  client mange structure
- */
-struct client_manage_t {
-    int fd;
-    std::string read_buff;
-    std::string write_buff;
-};
 
 /*-------------------------------------------------------------------*/
 /*! @brief  set non-blocking socket
@@ -89,7 +81,7 @@ int main()
     epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ev);
 
     // hash map for client manage
-    std::unordered_map<int, client_manage_t> clients_map;
+    std::unordered_map<int, client_manage> clients_map;
 
     // start server
     std::cout << "chbi-redsis echo server start" << std::endl;
@@ -120,7 +112,7 @@ int main()
                     set_nonblocking(new_client_fd);
 
                     // add new client info to hash map
-                    clients_map[new_client_fd] = client_manage_t {new_client_fd, "", ""};
+                    clients_map[new_client_fd] = ::client_manage(new_client_fd);
 
                     // add epoll list
                     struct epoll_event new_client_ev;
@@ -135,39 +127,30 @@ int main()
             // [EVENT] recv data from client
             } else if (triggerd_event & EPOLLIN) {
                 char buffer[1024];
+                uint32_t parsed_pos;
                 ssize_t read_num = read(read_fd, buffer, sizeof(buffer));
 
+                // read faile
                 if (read_num <= 0) {
                     std::cout << "Failed to read(). Close connet." << std::endl;
                     close(read_fd);
                     clients_map.erase(read_fd);
+
+                // read success
                 } else {
-                    client_manage_t& client = clients_map[read_fd];
+                    client_manage& client = clients_map[read_fd];
                     client.read_buff.append(buffer, read_num);
 
-                    // echo
-                    client.write_buff += client.read_buff;
-                    client.read_buff.clear();
-
-                    // send message
-                    ssize_t write_num = write(read_fd, client.write_buff.c_str(), client.write_buff.length());
-
-                    if (write_num > 0) {
-                        client.write_buff.erase(0, write_num);
-                    }
-
-                    // if cannot write all data, set EPOLLOUT flag and write next time.
-                    if (!client.write_buff.empty()) {
-                        struct epoll_event mod_ev;
-                        mod_ev.events = EPOLLIN | EPOLLOUT;
-                        mod_ev.data.fd = read_fd;
-                        epoll_ctl(epoll_fd, EPOLL_CTL_MOD, read_fd, &mod_ev);
+                    while (parse_resp(client, parsed_pos)) {
+                        //debug
+                        client.read_buff.erase(0, parsed_pos);
+                        std::cout << "parse done" << std::endl;
                     }
                 }
 
             // [EVENT] write buffer empty
             } else if (triggerd_event & EPOLLOUT) {
-                client_manage_t client = clients_map[read_fd];
+                client_manage client = clients_map[read_fd];
                 ssize_t write_num = write(read_fd, client.write_buff.c_str(), client.write_buff.length());
 
                 // erase send data

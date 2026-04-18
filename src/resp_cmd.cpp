@@ -92,6 +92,50 @@ void resp_command::register_commands()
             return "$" + std::to_string(value.length()) + "\r\n" + value + "\r\n";
         }
     };
+
+    // EXISTS command
+    cmd_table["EXISTS"] = [this](const std::vector<std::string_view>& args)
+    {
+        // args check
+        if (args.empty()) {
+            return static_cast<std::string>("-ERR wrong number of arguments for EXISTS command\r\n");
+        }
+
+        // count exists item number
+        int count = 0;
+        for (auto arg : args) {
+            // convert arg to key
+            std::string sv_key(arg);
+
+            // check item exists
+            if (this->kv_store.find(sv_key) != this->kv_store.end()) {
+                count++;
+            }
+        }
+
+        return ":" + std::to_string(count) + "\r\n";
+    };
+
+    // DEL command
+    cmd_table["DEL"] = [this](const std::vector<std::string_view>& args)
+    {
+        // check args
+        if (args.empty()) {
+            return static_cast<std::string>("-ERR wrong number of arguments for DEL command\r\n");
+        }
+
+        // count delete item number
+        int count = 0;
+        for (auto arg : args) {
+            // convert arg to key
+            std::string sv_key(arg);
+
+            // erase method returns 1 if delete success
+            count += this->kv_store.erase(sv_key);
+        }
+
+        return ":" + std::to_string(count) + "\r\n";
+    };
 }
 
 /*-------------------------------------------------------------*/

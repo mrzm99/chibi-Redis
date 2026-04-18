@@ -50,6 +50,11 @@ private:
     std::string cmd_get(const std::vector<std::string_view>& args);
     std::string cmd_exists(const std::vector<std::string_view>& args);
     std::string cmd_del(const std::vector<std::string_view>& args);
+    std::string cmd_incr(const std::vector<std::string_view>& args);
+    std::string cmd_decr(const std::vector<std::string_view>& args);
+
+    // utility
+    std::string apply_integer_delta(std::string_view sv_key, long long delta);
 };
 
 #endif

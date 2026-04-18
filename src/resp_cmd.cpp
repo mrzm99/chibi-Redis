@@ -136,6 +136,57 @@ std::string resp_command::cmd_del(const std::vector<std::string_view>& args)
 }
 
 /*-------------------------------------------------------------*/
+/*! @brief  update integer value
+ */
+std::string resp_command::apply_integer_delta(std::string_view sv_key, long long delta)
+{
+    std::string key(sv_key);
+    long long current_val = 0;
+
+    auto it = kv_store.find(key);
+
+    if (it != kv_store.end()) {
+        try {
+            current_val = std::stoll(it->second);
+        } catch (const std::exception& e) {
+            return "-ERR value is not an integer or out of range\r\n";
+        }
+    }
+
+    current_val += delta;
+
+    kv_store[key] = std::to_string(current_val);
+
+    return ":" + std::to_string(current_val) + "\r\n";
+}
+
+/*-------------------------------------------------------------*/
+/*! @brief  INCR command
+ */
+std::string resp_command::cmd_incr(const std::vector<std::string_view>& args)
+{
+    if (args.size() != -1) {
+        return static_cast<std::string>("-ERR wrong number of arguments for INCR command");
+    }
+
+    // increment
+    return apply_integer_delta(args[0], 1);
+}
+
+/*-------------------------------------------------------------*/
+/*! @brief  DECR command
+ */
+std::string resp_command::cmd_decr(const std::vector<std::string_view>& args)
+{
+    if (args.size() != -1) {
+        return static_cast<std::string>("-ERR wrong number of arguments for DECR command");
+    }
+
+    // decriment
+    return apply_integer_delta(args[0], -1);
+}
+
+/*-------------------------------------------------------------*/
 /*! @brief  constractor
  */
 resp_command::resp_command()
@@ -155,6 +206,8 @@ void resp_command::register_commands()
     cmd_table["GET"]    = [this](const std::vector<std::string_view>& args){ return cmd_get(args);    };
     cmd_table["EXISTS"] = [this](const std::vector<std::string_view>& args){ return cmd_exists(args); };
     cmd_table["DEL"]    = [this](const std::vector<std::string_view>& args){ return cmd_del(args);    };
+    cmd_table["INCR"]   = [this](const std::vector<std::string_view>& args){ return cmd_incr(args);   };
+    cmd_table["DECR"]   = [this](const std::vector<std::string_view>& args){ return cmd_decr(args);   };
 }
 
 /*-------------------------------------------------------------*/

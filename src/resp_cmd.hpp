@@ -12,6 +12,7 @@
 #define __RESP_CMD_HPP__
 
 #include <string>
+#include <string_view>
 #include <vector>
 #include <unordered_map>
 #include <functional>
@@ -41,6 +42,14 @@ private:
 
     // register command
     void register_commands();
+
+    // command
+    std::string cmd_ping(const std::vector<std::string_view>& args);
+    std::string cmd_echo(const std::vector<std::string_view>& args);
+    std::string cmd_set(const std::vector<std::string_view>& args);
+    std::string cmd_get(const std::vector<std::string_view>& args);
+    std::string cmd_exists(const std::vector<std::string_view>& args);
+    std::string cmd_del(const std::vector<std::string_view>& args);
 };
 
 #endif

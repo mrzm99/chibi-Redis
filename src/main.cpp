@@ -9,9 +9,11 @@
 /*-------------------------------------------------------------------*/
 #include "../include/chibi-redis.hpp"
 #include "resp_parse.hpp"
+#include "resp_cmd.hpp"
 
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 #include <sys/epoll.h>
@@ -41,6 +43,9 @@ static void set_nonblocking(int fd)
  */
 int main()
 {
+    // resp cmd manager
+    resp_command resp_cmd_manage{};
+
     // create socket for server
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) {
@@ -94,13 +99,13 @@ int main()
         // process event
         for (int i = 0; i < num_ready; i++) {
             // get ready fd
-            int read_fd = events[i].data.fd;
+            int ready_fd = events[i].data.fd;
 
             // get event info
             uint32_t triggerd_event = events[i].events;
 
             // [EVENT] new client connection
-            if (read_fd == server_fd) {
+            if (ready_fd == server_fd) {
                 struct sockaddr_in new_client_addr;
                 socklen_t new_client_len = sizeof(new_client_addr);
                 int new_client_fd = accept(server_fd, (struct sockaddr*)&new_client_addr, &new_client_len);
@@ -128,30 +133,41 @@ int main()
             } else if (triggerd_event & EPOLLIN) {
                 char buffer[1024];
                 uint32_t parsed_pos;
-                ssize_t read_num = read(read_fd, buffer, sizeof(buffer));
+                ssize_t read_num = read(ready_fd, buffer, sizeof(buffer));
 
                 // read faile
                 if (read_num <= 0) {
                     std::cout << "Failed to read(). Close connet." << std::endl;
-                    close(read_fd);
-                    clients_map.erase(read_fd);
+                    close(ready_fd);
+                    clients_map.erase(ready_fd);
 
                 // read success
                 } else {
-                    client_manage& client = clients_map[read_fd];
+                    client_manage& client = clients_map[ready_fd];
                     client.read_buff.append(buffer, read_num);
 
                     while (parse_resp(client, parsed_pos)) {
-                        //debug
+                        // debug
+                        std::cout << "parse_resp success!!" << std::endl;
+                        //
+                        std::string cmd_name = std::string(client.parsed_args[0]);
+                        std::vector<std::string_view> args(client.parsed_args.begin() + 1, client.parsed_args.end());
+
+                        // execute command
+                        std::string response = resp_cmd_manage.execute_command(cmd_name, args);
+
+                        // erase parsed data
                         client.read_buff.erase(0, parsed_pos);
-                        std::cout << "parse done" << std::endl;
+
+                        // send response
+                        write(ready_fd, response.c_str(), response.length());
                     }
                 }
 
             // [EVENT] write buffer empty
             } else if (triggerd_event & EPOLLOUT) {
-                client_manage client = clients_map[read_fd];
-                ssize_t write_num = write(read_fd, client.write_buff.c_str(), client.write_buff.length());
+                client_manage client = clients_map[ready_fd];
+                ssize_t write_num = write(ready_fd, client.write_buff.c_str(), client.write_buff.length());
 
                 // erase send data
                 if (write_num > 0) {
@@ -162,8 +178,8 @@ int main()
                 if (client.write_buff.empty()) {
                     struct epoll_event mod_ev;
                     mod_ev.events = EPOLLIN;
-                    mod_ev.data.fd = read_fd;
-                    epoll_ctl(epoll_fd, EPOLL_CTL_MOD, read_fd, &mod_ev);
+                    mod_ev.data.fd = ready_fd;
+                    epoll_ctl(epoll_fd, EPOLL_CTL_MOD, ready_fd, &mod_ev);
                 }
 
             // [EVENT] nothing

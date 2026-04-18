@@ -13,6 +13,8 @@
 #include <algorithm>
 #include <cctype>
 #include <iostream>
+#include <string>
+#include <string_view>
 
 /*-------------------------------------------------------------*/
 /*! @brief  constractor
@@ -44,6 +46,51 @@ void resp_command::register_commands()
 
         std::string msg = std::string(args[0]);
         return "$" + std::to_string(msg.length()) + "\r\n" + msg + "\r\n";
+    };
+
+    // SET command
+    cmd_table["SET"] = [this](const std::vector<std::string_view>& args)
+    {
+        // check args
+        if (args.size() != 2) {
+            std::cout << "[Debug][SET] args.size() = "<< args.size() << std::endl;
+            return "-ERR wrong number of arguments for SET command\r\n";
+        }
+
+        // get key-value
+        std::string key(args[0]);
+        std::string value(args[1]);
+
+        // save value
+        this->kv_store[key] = value;
+
+        return "+OK\r\n";
+    };
+
+    // GET command
+    cmd_table["GET"] = [this](const std::vector<std::string_view>& args)
+    {
+        // args check
+        if (args.size() > 1) {
+            std::cout << "[Debug][GET] args.size() = " << args.size() << std::endl;
+            return static_cast<std::string>("-ERR wrong number of arguments for GET command\r\n");
+        }
+
+        // get key
+        std::string key(args[0]);
+
+        // serarch key
+        auto it = this->kv_store.find(key);
+
+        // find failed
+        if (it == kv_store.end()) {
+            return static_cast<std::string>("$-1\r\n");
+
+        // find success
+        } else {
+            std::string value = it->second;
+            return "$" + std::to_string(value.length()) + "\r\n" + value + "\r\n";
+        }
     };
 }
 

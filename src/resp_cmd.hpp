@@ -33,6 +33,9 @@ public :
     std::string execute_command(const std::string& cmd_name, const std::vector<std::string_view>& args);
 
 private:
+    // hash table
+    std::unordered_map<std::string, std::string> kv_store;
+
     // command table
     std::unordered_map<std::string, command_handler_t> cmd_table;
 

@@ -159,6 +159,9 @@ int main()
                         // erase parsed data
                         client.read_buff.erase(0, parsed_pos);
 
+                        // clear args
+                        client.parsed_args.clear();
+
                         // send response
                         write(ready_fd, response.c_str(), response.length());
                     }

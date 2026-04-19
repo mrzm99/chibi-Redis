@@ -13,8 +13,10 @@
 #include <algorithm>
 #include <cctype>
 #include <iostream>
+#include <list>
 #include <string>
 #include <string_view>
+#include <variant>
 
 /*-------------------------------------------------------------*/
 /*! @brief  PING command
@@ -54,7 +56,7 @@ std::string resp_command::cmd_set(const std::vector<std::string_view>& args)
     std::string value(args[1]);
 
     // save value
-    this->kv_store[key] = value;
+    this->kv_store[key] = static_cast<redis_string>(value);
 
     return "+OK\r\n";
 }
@@ -82,8 +84,12 @@ std::string resp_command::cmd_get(const std::vector<std::string_view>& args)
 
     // find success
     } else {
-        std::string value = it->second;
-        return "$" + std::to_string(value.length()) + "\r\n" + value + "\r\n";
+        if (std::holds_alternative<redis_string>(it->second)) {
+            const std::string& value = std::get<redis_string>(it->second);
+            return "$" + std::to_string(value.length()) + "\r\n" + value + "\r\n";
+        } else {
+            return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+        }
     }
 }
 
@@ -147,7 +153,7 @@ std::string resp_command::apply_integer_delta(std::string_view sv_key, long long
 
     if (it != kv_store.end()) {
         try {
-            current_val = std::stoll(it->second);
+            current_val = std::stoll(std::get<redis_string>(it->second));
         } catch (const std::exception& e) {
             return "-ERR value is not an integer or out of range\r\n";
         }
@@ -165,7 +171,7 @@ std::string resp_command::apply_integer_delta(std::string_view sv_key, long long
  */
 std::string resp_command::cmd_incr(const std::vector<std::string_view>& args)
 {
-    if (args.size() != -1) {
+    if (args.size() != 1) {
         return static_cast<std::string>("-ERR wrong number of arguments for INCR command");
     }
 
@@ -178,12 +184,89 @@ std::string resp_command::cmd_incr(const std::vector<std::string_view>& args)
  */
 std::string resp_command::cmd_decr(const std::vector<std::string_view>& args)
 {
-    if (args.size() != -1) {
+    if (args.size() != 1) {
         return static_cast<std::string>("-ERR wrong number of arguments for DECR command");
     }
 
     // decriment
     return apply_integer_delta(args[0], -1);
+}
+
+/*-------------------------------------------------------------*/
+/*! @brief  LPUSH command
+ */
+std::string resp_command::cmd_lpush(const std::vector<std::string_view>& args)
+{
+    // 
+    if (args.size() < 2) {
+        return "-ERR wrong number of arguments for LPUSH command\r\n";
+    }
+
+    std::string key(args[0]);
+    auto it = kv_store.find(key);
+
+    //
+    if (it == kv_store.end()) {
+        redis_list new_list;
+
+        for (size_t i = 1; i < args.size(); i++) {
+            new_list.push_front(std::string(args[i]));
+        }
+        kv_store[key] = std::move(new_list);
+        return ":" + std::to_string(args.size() - 1) + "\r\n";
+    }
+
+    //
+    if (auto* list_ptr = std::get_if<redis_list>(&it->second)) {
+        for (size_t i = 1; i < args.size(); i++) {
+            list_ptr->push_front(std::string(args[i]));
+        }
+        return ":" + std::to_string(list_ptr->size()) + "\r\n";
+
+    //
+    } else {
+        return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+    }
+}
+
+/*-------------------------------------------------------------*/
+/*! @brief  RPOP command
+ */
+std::string resp_command::cmd_rpop(const std::vector<std::string_view>& args)
+{
+    if (args.size() != 1) {
+        return "-ERR wrong number of arguments for RPOP command\r\n";
+    }
+
+    std::string key(args[0]);
+    auto it = kv_store.find(key);
+
+    //
+    if (it == kv_store.end()) {
+        return "$-1\r\n";
+    }
+
+    //
+    if (auto* list_ptr = std::get_if<redis_list>(&it->second)) {
+        // 
+        if (list_ptr->empty()) {
+            return "$-1\r\n";
+        }
+
+        //
+        std::string value = list_ptr->back();
+        list_ptr->pop_back();
+
+        //
+        if (list_ptr->empty()) {
+            kv_store.erase(it);
+        }
+
+        return "$" + std::to_string(value.length()) + "\r\n" + value + "\r\n";
+
+    } else {
+        return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+    }
 }
 
 /*-------------------------------------------------------------*/
@@ -208,6 +291,8 @@ void resp_command::register_commands()
     cmd_table["DEL"]    = [this](const std::vector<std::string_view>& args){ return cmd_del(args);    };
     cmd_table["INCR"]   = [this](const std::vector<std::string_view>& args){ return cmd_incr(args);   };
     cmd_table["DECR"]   = [this](const std::vector<std::string_view>& args){ return cmd_decr(args);   };
+    cmd_table["LPUSH"]  = [this](const std::vector<std::string_view>& args){ return cmd_lpush(args);  };
+    cmd_table["RPOP"]   = [this](const std::vector<std::string_view>& args){ return cmd_rpop(args);   };
 }
 
 /*-------------------------------------------------------------*/

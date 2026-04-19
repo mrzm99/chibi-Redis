@@ -16,6 +16,16 @@
 #include <vector>
 #include <unordered_map>
 #include <functional>
+#include <deque>
+#include <variant>
+
+/*-------------------------------------------------------------*/
+/*! @brief  Redis support data type
+ */
+using redis_string = std::string;
+using redis_list = std::deque<std::string>;
+
+using redis_value = std::variant<redis_string, redis_list>;
 
 /*-------------------------------------------------------------*/
 /*! @brief  Command Handerl Type Definition
@@ -35,7 +45,7 @@ public :
 
 private:
     // hash table
-    std::unordered_map<std::string, std::string> kv_store;
+    std::unordered_map<std::string, redis_value> kv_store;
 
     // command table
     std::unordered_map<std::string, command_handler_t> cmd_table;
@@ -52,6 +62,8 @@ private:
     std::string cmd_del(const std::vector<std::string_view>& args);
     std::string cmd_incr(const std::vector<std::string_view>& args);
     std::string cmd_decr(const std::vector<std::string_view>& args);
+    std::string cmd_lpush(const std::vector<std::string_view>& args);
+    std::string cmd_rpop(const std::vector<std::string_view>& args);
 
     // utility
     std::string apply_integer_delta(std::string_view sv_key, long long delta);

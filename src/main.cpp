@@ -154,7 +154,7 @@ int main()
                         std::vector<std::string_view> args(client.parsed_args.begin() + 1, client.parsed_args.end());
 
                         // execute command
-                        std::string response = resp_cmd_manage.execute_command(cmd_name, args);
+                        client.write_buff = resp_cmd_manage.execute_command(cmd_name, args);
 
                         // erase parsed data
                         client.read_buff.erase(0, parsed_pos);
@@ -163,7 +163,19 @@ int main()
                         client.parsed_args.clear();
 
                         // send response
-                        write(ready_fd, response.c_str(), response.length());
+                        int wrote_num = write(ready_fd, client.write_buff.c_str(), client.write_buff.length());
+
+                        // erase send data
+                        if (wrote_num > 0) {
+                            client.write_buff.erase(0, wrote_num);
+                        }
+
+                        if (!client.write_buff.empty()) {
+                            struct epoll_event mod_ev;
+                            mod_ev.events = EPOLLOUT;
+                            mod_ev.data.fd = ready_fd;
+                            epoll_ctl(epoll_fd, EPOLL_CTL_MOD, ready_fd, &mod_ev);
+                        }
                     }
                 }
 

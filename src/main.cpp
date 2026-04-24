@@ -39,7 +39,57 @@ static void set_nonblocking(int fd)
 }
 
 /*-------------------------------------------------------------------*/
-/*! main
+/*! @brief  new client connect handler
+ */
+static void new_client_connect_handler(int server_fd, std::unordered_map<int, client_manage>& clients_map, int epoll_fd)
+{
+    struct sockaddr_in new_client_addr;
+    socklen_t new_client_len = sizeof(new_client_addr);
+
+    int new_client_fd = accept(server_fd, (struct sockaddr*)&new_client_addr, &new_client_len);
+
+    if (new_client_fd < 0) {
+        std::cout << "Failed to accpet() for new client" << std::endl;
+        return;
+    }
+
+    // set non blocking IO
+    set_nonblocking(new_client_fd);
+
+    // add new client
+    clients_map[new_client_fd] = ::client_manage(new_client_fd);
+
+    // add epoll list
+    struct epoll_event new_client_ev;
+    new_client_ev.events = EPOLLIN;
+    new_client_ev.data.fd = new_client_fd;
+    epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_client_fd, &new_client_ev);
+}
+
+/*-------------------------------------------------------------------*/
+/*! @brief  write hanlder
+ */
+static void write_handler(int ready_fd, int epoll_fd, client_manage& client)
+{
+    // send
+    ssize_t wrote_num = write(ready_fd, client.write_buff.c_str(), client.write_buff.length()); 
+
+    // erase data
+    if (wrote_num > 0) {
+        client.write_buff.erase(0, wrote_num);
+    }
+
+    // if send all data, don't need EPOLLOUT flag anymore
+    if (client.write_buff.empty()) {
+        struct epoll_event mod_ev;
+        mod_ev.events = EPOLLIN;
+        mod_ev.data.fd = ready_fd;
+        epoll_ctl(epoll_fd, EPOLL_CTL_MOD, ready_fd, &mod_ev);
+    }
+}
+
+/*-------------------------------------------------------------------*/
+/*! @brief  main
  */
 int main()
 {
@@ -106,28 +156,7 @@ int main()
 
             // [EVENT] new client connection
             if (ready_fd == server_fd) {
-                struct sockaddr_in new_client_addr;
-                socklen_t new_client_len = sizeof(new_client_addr);
-                int new_client_fd = accept(server_fd, (struct sockaddr*)&new_client_addr, &new_client_len);
-
-                if (new_client_fd < 0) {
-                    std::cout << "Failed to accept() for new client" << std::endl;
-                } else {
-                    // set non-blocking
-                    set_nonblocking(new_client_fd);
-
-                    // add new client info to hash map
-                    clients_map[new_client_fd] = ::client_manage(new_client_fd);
-
-                    // add epoll list
-                    struct epoll_event new_client_ev;
-                    new_client_ev.events = EPOLLIN;
-                    new_client_ev.data.fd = new_client_fd;
-                    epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_client_fd, &new_client_ev);
-
-                    // log message
-                    std::cout << "new client connected" << std::endl;
-                }
+                new_client_connect_handler(server_fd, clients_map, epoll_fd);
 
             // [EVENT] recv data from client
             } else if (triggerd_event & EPOLLIN) {
@@ -182,20 +211,7 @@ int main()
             // [EVENT] write buffer empty
             } else if (triggerd_event & EPOLLOUT) {
                 client_manage client = clients_map[ready_fd];
-                ssize_t write_num = write(ready_fd, client.write_buff.c_str(), client.write_buff.length());
-
-                // erase send data
-                if (write_num > 0) {
-                    client.write_buff.erase(0, write_num);
-                }
-
-                // if send all data in write_buffer, unset EPOLLOUT flag
-                if (client.write_buff.empty()) {
-                    struct epoll_event mod_ev;
-                    mod_ev.events = EPOLLIN;
-                    mod_ev.data.fd = ready_fd;
-                    epoll_ctl(epoll_fd, EPOLL_CTL_MOD, ready_fd, &mod_ev);
-                }
+                write_handler(ready_fd, epoll_fd, client);
 
             // [EVENT] nothing
             } else {
